@@ -8,5 +8,6 @@ debug_screenshot.png
 .idea/*
 cookies.json
 *.zip
+*.7z
 chrome_profile/*
 .cursor/*
