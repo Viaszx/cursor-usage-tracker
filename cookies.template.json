@@ -1,0 +1,32 @@
+{
+    "timestamp": "2025-09-05T17:24:04.001Z",
+    "cookies": [
+        {
+            "name": "NEXT_LOCALE",
+            "value": "en",
+            "domain": ".cursor.com",
+            "path": "/",
+            "httpOnly": false,
+            "secure": true,
+            "sameSite": "Lax"
+        },
+        {
+            "name": "WorkosCursorSessionToken",
+            "value": "user_",
+            "domain": ".cursor.com",
+            "path": "/",
+            "httpOnly": true,
+            "secure": true,
+            "sameSite": "Lax"
+        },
+        {
+            "name": "GCLB",
+            "value": "56",
+            "domain": ".cursor.com",
+            "path": "/",
+            "httpOnly": false,
+            "secure": true,
+            "sameSite": "Lax"
+        }
+    ]
+}
