@@ -1,0 +1,12 @@
+node_modules/
+*.env
+data/*
+*.log
+debug_screenshot.png
+.DS_Store
+.vscode/*
+.idea/*
+cookies.json
+*.zip
+chrome_profile/*
+.cursor/*

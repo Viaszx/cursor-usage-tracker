@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cursor Usage Tracker</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Cursor Usage Tracker</h1>
+            <p>Monitor your Cursor AI usage and analytics</p>
+            <div class="user-info" id="userInfo">
+                <div class="user-email">Loading...</div>
+            </div>
+        </div>
+
+        <div class="header-controls">
+            <button class="refresh-btn" onclick="refreshData()">Refresh Data</button>
+            <div class="status" id="status">Loading...</div>
+            <div class="last-update">
+                <span class="last-update-label">Last update:</span>
+                <span id="lastUpdate">-</span>
+            </div>
+        </div>
+
+        <div id="loading" class="loading">
+            <h2>Loading data...</h2>
+        </div>
+
+        <div id="content" class="hidden">
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <h3>Total Events</h3>
+                    <div class="value" id="totalEvents">-</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Total Tokens</h3>
+                    <div class="value" id="totalTokens">-</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Charged Cost</h3>
+                    <div class="value" id="chargedCost">-</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Included Cost</h3>
+                    <div class="value" id="includedCost">-</div>
+                </div>
+            </div>
+
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <h3>Input Tokens</h3>
+                    <div class="value" id="inputTokens">-</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Output Tokens</h3>
+                    <div class="value" id="outputTokens">-</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Cache Read Tokens</h3>
+                    <div class="value" id="cacheReadTokens">-</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Cache Write Tokens</h3>
+                    <div class="value" id="cacheWriteTokens">-</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Total Credits</h3>
+                    <div class="value" id="totalCredits">-</div>
+                </div>
+            </div>
+
+            <div class="chart-container">
+                <div class="chart-title">Statistics by Model</div>
+                <div id="modelChart"></div>
+            </div>
+
+            <div class="chart-container">
+                <div class="chart-title">Statistics by Kind</div>
+                <div id="kindChart"></div>
+            </div>
+
+            <div class="recent-events">
+                <div class="chart-title">Recent Events</div>
+                <div id="recentEvents"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let statsData = null;
+        let allEvents = null;
+        let userInfo = null;
+        let eventSource = null;
+
+        function formatNumber(num) {
+            if (num >= 1_000_000_000) {
+                return (num / 1_000_000_000).toFixed(1) + 'B';
+            } else if (num >= 1_000_000) {
+                return (num / 1_000_000).toFixed(1) + 'M';
+            } else if (num >= 1_000) {
+                return (num / 1_000).toFixed(1) + 'K';
+            }
+            return num.toString();
+        }
+
+        async function loadData() {
+            try {
+                document.getElementById('loading').classList.remove('hidden');
+                document.getElementById('content').classList.add('hidden');
+                document.getElementById('status').textContent = 'Loading...';
+                document.getElementById('status').className = 'status';
+
+                // Загружаем статистику, все события и информацию о пользователе параллельно
+                const [statsResponse, eventsResponse, userInfoResponse] = await Promise.all([
+                    fetch('/api/stats'),
+                    fetch('/api/all-events'),
+                    fetch('/api/user-info')
+                ]);
+
+                if (!statsResponse.ok) {
+                    throw new Error(`HTTP ${statsResponse.status}: ${statsResponse.statusText}`);
+                }
+                if (!eventsResponse.ok) {
+                    throw new Error(`HTTP ${eventsResponse.status}: ${eventsResponse.statusText}`);
+                }
+                if (!userInfoResponse.ok) {
+                    throw new Error(`HTTP ${userInfoResponse.status}: ${userInfoResponse.statusText}`);
+                }
+
+                statsData = await statsResponse.json();
+                allEvents = await eventsResponse.json();
+                userInfo = await userInfoResponse.json();
+
+                console.log('Loaded stats:', statsData);
+                console.log('Loaded events:', allEvents.length);
+
+                updateUI();
+                updateUserInfo();
+
+                document.getElementById('status').textContent = 'Online';
+                document.getElementById('status').className = 'status online';
+
+            } catch (error) {
+                console.error('Error loading data:', error);
+                document.getElementById('status').textContent = 'Error loading';
+                document.getElementById('status').className = 'status offline';
+
+                const content = document.getElementById('content');
+                content.innerHTML = `
+                    <div class="error">
+                        <h3>Error loading data</h3>
+                        <p>${error.message}</p>
+                        <p>Make sure the server is running and data is available.</p>
+                    </div>
+                `;
+                content.classList.remove('hidden');
+            } finally {
+                document.getElementById('loading').classList.add('hidden');
+            }
+        }
+
+        function updateStats() {
+            updateUI();
+            updateCharts();
+        }
+
+        function updateCharts() {
+            updateModelChart();
+            updateKindChart();
+            updateRecentEvents();
+        }
+
+        function updateUI() {
+            if (!statsData) return;
+
+            // Calculate detailed statistics from events
+            let chargedCost = 0;
+            let includedCost = 0;
+            let totalCredits = 0;
+            let inputTokens = 0;
+            let outputTokens = 0;
+            let cacheReadTokens = 0;
+            let cacheWriteTokens = 0;
+
+            const events = allEvents || statsData.recentEvents || [];
+            console.log('Events for token calculation:', events.length, events.slice(0, 2));
+
+            events.forEach(event => {
+                if (event.costInfo) {
+                    if (event.costInfo.isIncluded) {
+                        includedCost += event.costInfo.originalCost || 0;
+                    } else if (!event.costInfo.isFree) {
+                        chargedCost += event.cost || 0;
+                    }
+                } else {
+                    chargedCost += event.cost || 0;
+                }
+
+                totalCredits += event.costInfo?.requestsCosts || event.credits || 0;
+
+                if (event.tokenUsage) {
+                    inputTokens += event.tokenUsage.inputTokens || 0;
+                    outputTokens += event.tokenUsage.outputTokens || 0;
+                    cacheReadTokens += event.tokenUsage.cacheReadTokens || 0;
+                    cacheWriteTokens += event.tokenUsage.cacheWriteTokens || 0;
+                }
+            });
+
+            console.log('Token totals:', { inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens });
+
+            // Update main statistics
+            document.getElementById('totalEvents').textContent = statsData.totalEvents.toLocaleString();
+            document.getElementById('totalTokens').textContent = formatNumber(statsData.totalTokens);
+            document.getElementById('chargedCost').textContent = `$${chargedCost.toFixed(2)}`;
+            document.getElementById('includedCost').textContent = `$${includedCost.toFixed(2)}`;
+            document.getElementById('totalCredits').textContent = `$${(totalCredits / 100).toFixed(2)}`;
+            document.getElementById('lastUpdate').textContent = new Date(statsData.timestamp).toLocaleString();
+
+            // Update token statistics
+            document.getElementById('inputTokens').textContent = formatNumber(inputTokens);
+            document.getElementById('outputTokens').textContent = formatNumber(outputTokens);
+            document.getElementById('cacheReadTokens').textContent = formatNumber(cacheReadTokens);
+            document.getElementById('cacheWriteTokens').textContent = formatNumber(cacheWriteTokens);
+
+            // Update charts
+            updateModelChart();
+            updateKindChart();
+            updateRecentEvents();
+
+            document.getElementById('content').classList.remove('hidden');
+        }
+
+        function updateUserInfo() {
+            if (!userInfo) return;
+
+            let userInfoHtml = '';
+
+            // Email
+            if (userInfo.email) {
+                const emailClass = userInfo.email_verified === false ? 'user-email unverified' : 'user-email';
+                userInfoHtml += `<div class="${emailClass}">${userInfo.email}</div>`;
+            }
+
+            // Plan info
+            let planText = userInfo.individualMembershipType || userInfo.membershipType || 'Unknown';
+            if (userInfo.subscriptionStatus) {
+                planText += ` (${userInfo.subscriptionStatus})`;
+            }
+            userInfoHtml += `<div class="user-plan">${planText}</div>`;
+
+            // Customer Balance (only if not 0)
+            if (userInfo.customerBalance && userInfo.customerBalance !== 0) {
+                userInfoHtml += `<div class="user-balance">Balance: $${userInfo.customerBalance}</div>`;
+            }
+
+            // Trial Eligible (only if true)
+            if (userInfo.trialEligible) {
+                userInfoHtml += `<div class="user-trial">Trial Eligible</div>`;
+            }
+
+            // Team Member info (only if true)
+            if (userInfo.isTeamMember) {
+                userInfoHtml += `<div class="user-team">Team Member`;
+                if (userInfo.teamMembershipType) {
+                    userInfoHtml += ` (${userInfo.teamMembershipType})`;
+                }
+                userInfoHtml += `</div>`;
+            }
+
+            // Verified Student (only if true)
+            if (userInfo.verifiedStudent) {
+                userInfoHtml += `<div class="user-student">Student Plan</div>`;
+            }
+
+            document.getElementById('userInfo').innerHTML = userInfoHtml;
+        }
+
+
+        function updateModelChart() {
+            const container = document.getElementById('modelChart');
+
+            // Use pre-calculated model statistics from statsData
+            const modelStats = statsData.byModel || {};
+            console.log('Model stats from data:', modelStats);
+
+            let html = '<div class="chart-grid">';
+            if (Object.keys(modelStats).length === 0) {
+                html += '<div class="chart-item"><span class="chart-label">No data available</span></div>';
+            } else {
+                Object.entries(modelStats).forEach(([model, data]) => {
+                    const percentage = statsData.totalEvents > 0 ? ((data.count / statsData.totalEvents) * 100).toFixed(1) : 0;
+                    html += `
+                        <div class="chart-item">
+                            <div class="chart-header">
+                                <span class="chart-label">${model}</span>
+                                <span class="chart-summary">Credits: $${((data.credits || 0) / 100).toFixed(2)} | ${formatNumber(data.tokens)} total | $${data.cost.toFixed(2)}</span>
+                                <span class="chart-count">${data.count} events (${percentage}%)</span>
+                            </div>
+                            <div class="chart-details">
+                                <div class="chart-tokens">
+                                    <div class="token-stat">
+                                        <span class="token-label">Input:</span>
+                                        <span class="token-value">${formatNumber(data.inputTokens || 0)}</span>
+                                    </div>
+                                    <div class="token-stat">
+                                        <span class="token-label">Output:</span>
+                                        <span class="token-value">${formatNumber(data.outputTokens || 0)}</span>
+                                    </div>
+                                    <div class="token-stat">
+                                        <span class="token-label">Cache Read:</span>
+                                        <span class="token-value">${formatNumber(data.cacheReadTokens || 0)}</span>
+                                    </div>
+                                    <div class="token-stat">
+                                        <span class="token-label">Cache Write:</span>
+                                        <span class="token-value">${formatNumber(data.cacheWriteTokens || 0)}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                });
+            }
+            html += '</div>';
+            container.innerHTML = html;
+        }
+
+        function updateKindChart() {
+            const container = document.getElementById('kindChart');
+
+            // Use pre-calculated kind statistics from statsData
+            const kindStats = statsData.byKind || {};
+            console.log('Kind stats from data:', kindStats);
+
+            // Map kind values to human-readable names in correct order
+            const kindDisplayNames = {
+                'included_pro': 'Included',
+                'errored_not_charged': 'Errored, Not Charged',
+                'pro-free-trial': 'pro-free-trial',
+                'free': 'free',
+                'custom_subscription': 'Custom Subscription'
+            };
+
+            // Define correct order for display
+            const kindOrder = ['included_pro', 'errored_not_charged', 'pro-free-trial', 'free', 'custom_subscription'];
+
+            let html = '<div class="chart-grid">';
+            if (Object.keys(kindStats).length === 0) {
+                html += '<div class="chart-item"><span class="chart-label">No data available</span></div>';
+            } else {
+                // Sort by predefined order
+                const sortedKinds = kindOrder.filter(kind => kindStats[kind]).concat(
+                    Object.keys(kindStats).filter(kind => !kindOrder.includes(kind))
+                );
+
+                sortedKinds.forEach(kind => {
+                    const data = kindStats[kind];
+                    const displayName = kindDisplayNames[kind] || kind;
+                    const percentage = statsData.totalEvents > 0 ? ((data.count / statsData.totalEvents) * 100).toFixed(1) : 0;
+                    html += `
+                        <div class="chart-item">
+                            <div class="chart-header">
+                                <span class="chart-label">${displayName}</span>
+                                <span class="chart-summary">Credits: $${((data.credits || 0) / 100).toFixed(2)} | ${formatNumber(data.tokens)} total | $${data.cost.toFixed(2)}</span>
+                                <span class="chart-count">${data.count} events (${percentage}%)</span>
+                            </div>
+                            <div class="chart-details">
+                                <div class="chart-tokens">
+                                    <div class="token-stat">
+                                        <span class="token-label">Input:</span>
+                                        <span class="token-value">${formatNumber(data.inputTokens || 0)}</span>
+                                    </div>
+                                    <div class="token-stat">
+                                        <span class="token-label">Output:</span>
+                                        <span class="token-value">${formatNumber(data.outputTokens || 0)}</span>
+                                    </div>
+                                    <div class="token-stat">
+                                        <span class="token-label">Cache Read:</span>
+                                        <span class="token-value">${formatNumber(data.cacheReadTokens || 0)}</span>
+                                    </div>
+                                    <div class="token-stat">
+                                        <span class="token-label">Cache Write:</span>
+                                        <span class="token-value">${formatNumber(data.cacheWriteTokens || 0)}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                });
+            }
+            html += '</div>';
+            container.innerHTML = html;
+        }
+
+        function updateRecentEvents() {
+            const container = document.getElementById('recentEvents');
+            const events = statsData.recentEvents;
+
+            if (events.length === 0) {
+                container.innerHTML = '<p>No event data available</p>';
+                return;
+            }
+
+            let html = '';
+            events.forEach(event => {
+                const date = new Date(event.date).toLocaleString();
+
+                // Determine cost styling
+                let costClass = 'charged';
+                let costText = `$${event.cost.toFixed(2)}`;
+
+                if (event.costInfo && event.costInfo.isIncluded) {
+                    costClass = 'included';
+                    costText = 'Included in plan';
+                } else if (event.costInfo && event.costInfo.isFree) {
+                    costClass = 'free';
+                    costText = 'Free';
+                } else if (event.cost === 0) {
+                    costClass = 'free';
+                    costText = 'Free';
+                }
+
+                // Token breakdown in one line
+                let tokenBreakdown = '';
+                if (event.tokenUsage) {
+                    tokenBreakdown = `
+                        <div class="token-line">
+                            <div>
+                                <span class="token-label">Input:</span>
+                                <span class="token-value">${formatNumber(event.tokenUsage.inputTokens)}</span>
+                            </div>
+                            <div>
+                                <span class="token-label">Output:</span>
+                                <span class="token-value">${formatNumber(event.tokenUsage.outputTokens)}</span>
+                            </div>
+                            <div>
+                                <span class="token-label">Cache Read:</span>
+                                <span class="token-value">${formatNumber(event.tokenUsage.cacheReadTokens)}</span>
+                            </div>
+                            <div>
+                                <span class="token-label">Cache Write:</span>
+                                <span class="token-value">${formatNumber(event.tokenUsage.cacheWriteTokens)}</span>
+                            </div>
+                        </div>
+                    `;
+                }
+
+                html += `
+                    <div class="event-item">
+                        <div class="event-header">
+                            <div class="event-info">
+                                <span class="event-date">${date}</span>
+                                <span class="event-model">${event.model === 'default' ? 'auto' : event.model}</span>
+                                <span class="event-kind">${event.kindDisplay || event.kind}</span>
+                                <span class="event-cost ${costClass}">${costText}</span>
+                            </div>
+                        </div>
+                        
+                        <div class="event-details">
+                            <div class="detail-item">
+                                <span class="detail-label">Total Tokens</span>
+                                <span class="detail-value">${formatNumber(event.tokens)}</span>
+                            </div>
+                            <div class="detail-item">
+                                <span class="detail-label">Credits</span>
+                                <span class="detail-value">$${((event.costInfo?.requestsCosts || event.credits || 0) / 100).toFixed(2)}</span>
+                            </div>
+                            <div class="detail-item">
+                                <span class="detail-label">Original Cost</span>
+                                <span class="detail-value">$${((event.costInfo?.totalCents || 0) / 100).toFixed(2)}</span>
+                            </div>
+                            <div class="detail-item">
+                                <span class="detail-label">Type</span>
+                                <span class="detail-value">${event.kindDisplay || event.kind}</span>
+                            </div>
+                        </div>
+                        
+                        ${tokenBreakdown}
+                    </div>
+                `;
+            });
+            container.innerHTML = html;
+        }
+
+        // Load data on page load
+        document.addEventListener('DOMContentLoaded', function () {
+            loadData();
+            setupSSE();
+        });
+
+        // Настройка Server-Sent Events для автоматического обновления
+        function setupSSE() {
+            if (eventSource) {
+                eventSource.close();
+            }
+
+            eventSource = new EventSource('/api/events');
+
+            eventSource.onmessage = function (event) {
+                try {
+                    const data = JSON.parse(event.data);
+
+                    if (data.error) {
+                        console.error('SSE Error:', data.error);
+                        return;
+                    }
+
+                    // Обновляем данные
+                    if (data.stats) {
+                        statsData = data.stats;
+                        updateStats();
+                    }
+
+                    if (data.data && data.data.events) {
+                        allEvents = data.data.events;
+                        updateCharts();
+                    }
+
+                    if (data.userInfo) {
+                        userInfo = data.userInfo;
+                        updateUserInfo();
+                    }
+
+                    // Обновляем timestamp
+                    if (data.timestamp) {
+                        updateLastUpdate(data.timestamp);
+                    }
+
+                    console.log('Data updated via SSE');
+                } catch (error) {
+                    console.error('Failed to parse SSE data:', error);
+                }
+            };
+
+            eventSource.onerror = function (event) {
+                console.error('SSE connection error:', event);
+                // Переподключаемся через 5 секунд
+                setTimeout(() => {
+                    if (eventSource.readyState === EventSource.CLOSED) {
+                        setupSSE();
+                    }
+                }, 5000);
+            };
+        }
+
+        function updateLastUpdate(timestamp) {
+            const lastUpdateElement = document.getElementById('lastUpdate');
+            if (lastUpdateElement) {
+                const date = new Date(timestamp);
+                lastUpdateElement.textContent = date.toLocaleString();
+            }
+        }
+
+        // Функция для ручного обновления данных
+        function refreshData() {
+            console.log('Manual refresh requested');
+            loadData();
+        }
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,32 @@
+{
+    "name": "cursor-usage-tracker",
+    "version": "1.0.0",
+    "description": "Automated data collection from Cursor Dashboard",
+    "main": "src/index.js",
+    "type": "module",
+    "scripts": {
+        "start": "node start.js",
+        "start:cookies": "node start_with_cookies.js",
+        "web": "node start_web.js",
+        "extract:cookies": "node extract_cookies.js",
+        "dev": "node --watch start.js"
+    },
+    "dependencies": {
+        "cors": "^2.8.5",
+        "dotenv": "^16.3.1",
+        "express": "^4.18.2",
+        "node-fetch": "^3.3.2",
+        "playwright": "^1.40.0"
+    },
+    "devDependencies": {
+        "prettier": "^3.1.0"
+    },
+    "keywords": [
+        "playwright",
+        "automation",
+        "cursor",
+        "data-collection"
+    ],
+    "author": "",
+    "license": "MIT"
+}
