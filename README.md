@@ -6,6 +6,7 @@ Automated Cursor AI usage monitoring with data collection and web dashboard.
 
 - **Automated data collection** - extracts usage statistics from Cursor
 - **Incremental synchronization** - loads only new events
+- **Smart event updates** - detects and updates events with changed data
 - **Real-time updates** - data updates automatically without page reload
 - **Detailed analytics** - statistics by models, event types, tokens and costs
 - **Web dashboard** - convenient interface for data viewing
@@ -64,6 +65,7 @@ src/
 
 - **Initial load**: full synchronization of all historical data
 - **Subsequent**: incremental loading of new events
+- **Event updates**: detects and updates events with changed data (credits, tokens, etc.)
 - **Real-time**: automatic dashboard updates when new data appears
 - **Fallback**: API error handling with adaptive page sizes
 
@@ -79,3 +81,5 @@ Data is saved in `data/` folder:
 Main settings in `src/config/constants.js`:
 - `SERVER_PORT` - web server port (3000)
 - `HEADLESS` - browser headless mode
+- `ACTIVE_EVENTS_CHECK_HOURS` - check events for updates within N hours (24)
+- `ACTIVE_EVENTS_MAX_COUNT` - maximum events to check for updates (100)

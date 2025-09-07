@@ -14,12 +14,14 @@ export const CONFIG = {
     CHROME_USER_DATA_DIR: process.env.CHROME_USER_DATA_DIR || '',
     OUTPUT_DIR: process.env.OUTPUT_DIR || './data',
     WEB_PORT: parseInt(process.env.WEB_PORT) || 3000,
-    HEADLESS: process.env.HEADLESS === 'true',
+    HEADLESS: process.env.HEADLESS === 'false',
     TIMEOUT: parseInt(process.env.TIMEOUT) || 30000,
     API_TIMEOUT: parseInt(process.env.API_TIMEOUT) || 10000,
-    COLLECTION_INTERVAL: parseInt(process.env.COLLECTION_INTERVAL) || 100000, // 5 минут
+    COLLECTION_INTERVAL: parseInt(process.env.COLLECTION_INTERVAL) || 300000, // 5 минут
     MAX_RETRIES: parseInt(process.env.MAX_RETRIES) || 3,
     PAGE_SIZE: parseInt(process.env.PAGE_SIZE) || 100,
+    ACTIVE_EVENTS_CHECK_HOURS: parseInt(process.env.ACTIVE_EVENTS_CHECK_HOURS) || 24,
+    ACTIVE_EVENTS_MAX_COUNT: parseInt(process.env.ACTIVE_EVENTS_MAX_COUNT) || 100,
     SELECTORS: {
         USAGE_TABLE: 'table, [class*="table"], tbody, [class*="usage"]',
         USAGE_ROWS: 'tr[class*="bg-transparent"], tr[class*="hover"], tbody tr, tr',

@@ -178,6 +178,21 @@ body {
     font-weight: bold;
 }
 
+.event-max-mode {
+    background: #238636;
+    color: #e6edf3;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    font-weight: bold;
+}
+
+.event-max-mode.disabled {
+    background: #6e7681;
+    color: #8b949e;
+    opacity: 0.6;
+}
+
 .event-kind {
     background: #21262d;
     color: #e6edf3;

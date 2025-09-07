@@ -36,7 +36,15 @@ export class DataCollector {
             }
 
             // Сбор данных через API
-            const data = await this.collectFromAPI(syncMetadata);
+            let data = await this.collectFromAPI(syncMetadata);
+
+            // Если инкрементальная синхронизация и нет новых событий, 
+            // запрашиваем активные события для проверки обновлений
+            if (isIncremental && data.length === 0) {
+                this.logger.info('No new events found, checking active events for updates...');
+                const activeEventsData = await this.collectActiveEventsForUpdates();
+                data = activeEventsData;
+            }
 
             if (data.length === 0) {
                 this.logger.warn('No data collected from API, trying DOM extraction...');
@@ -124,6 +132,7 @@ export class DataCollector {
 
                 const response = await page.evaluate(async ({ url, teamId, pageNum, pageSize, cookieString, startDate, endDate }) => {
                     try {
+                        // console.log(`Fetching page ${pageNum} with dates: ${startDate.toISOString()} to ${endDate.toISOString()}`);
                         const response = await fetch(url, {
                             method: 'POST',
                             headers: {
@@ -158,7 +167,9 @@ export class DataCollector {
                             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                         }
 
-                        return await response.json();
+                        const data = await response.json();
+                        // console.log(`Page ${pageNum} response:`, JSON.stringify(data, null, 2));
+                        return data;
                     } catch (error) {
                         console.error('API request failed:', error);
                         return { usageEventsDisplay: [] };
@@ -207,6 +218,218 @@ export class DataCollector {
         }
 
         return allEvents;
+    }
+
+    async collectActiveEventsForUpdates() {
+        try {
+            this.logger.info('Collecting active events for updates...');
+
+            // Получаем активные события из локальной базы
+            let existingData;
+            try {
+                existingData = await this.dataStorage.loadUsageData();
+                this.logger.info('Successfully loaded existing data');
+            } catch (error) {
+                this.logger.error('Failed to load existing data:', error);
+                return [];
+            }
+
+            if (!existingData || !existingData.events) {
+                this.logger.info('No existing data to check for updates');
+                return [];
+            }
+
+            // this.logger.info(`Loaded ${existingData.events.length} existing events`);
+
+            let activeEvents;
+            try {
+                activeEvents = this.dataStorage.getActiveEvents(existingData.events);
+                // this.logger.info('Successfully got active events');
+            } catch (error) {
+                this.logger.error('Failed to get active events:', error);
+                return [];
+            }
+
+            if (activeEvents.length === 0) {
+                this.logger.info('No active events to check for updates');
+                return [];
+            }
+
+            // this.logger.info(`Found ${activeEvents.length} active events for updates`);
+
+            // Получаем ID активных событий
+            let activeEventIds;
+            try {
+                activeEventIds = activeEvents.map(event => event.id);
+                // this.logger.info(`Active event IDs: ${activeEventIds.slice(0, 5).join(', ')}${activeEventIds.length > 5 ? '...' : ''}`);
+            } catch (error) {
+                this.logger.error('Failed to map active event IDs:', error);
+                return [];
+            }
+
+            // Запрашиваем эти события с сервера
+            const page = this.browserManager.page;
+            if (!page) {
+                throw new Error('Browser page not available');
+            }
+
+            // Проверяем, что страница готова
+            try {
+                const url = await page.url();
+                this.logger.info(`Current page URL: ${url}`);
+            } catch (error) {
+                this.logger.error('Failed to get page URL:', error);
+                return [];
+            }
+
+            // Получаем cookies
+            let cookieString;
+            try {
+                const cookies = await page.cookies();
+                this.logger.info(`Got ${cookies.length} cookies from page`);
+                cookieString = cookies.map(cookie => `${cookie.name}=${cookie.value}`).join('; ');
+                this.logger.info(`Cookie string length: ${cookieString.length}`);
+            } catch (error) {
+                this.logger.error('Failed to get cookies:', error);
+                this.logger.error('Error details:', error.message);
+                this.logger.error('Stack trace:', error.stack);
+
+                // Попробуем альтернативный способ получения cookies
+                try {
+                    this.logger.info('Trying alternative cookie method...');
+                    const context = page.context();
+                    const cookies = await context.cookies();
+                    this.logger.info(`Got ${cookies.length} cookies from context`);
+                    cookieString = cookies.map(cookie => `${cookie.name}=${cookie.value}`).join('; ');
+                    this.logger.info(`Alternative cookie string length: ${cookieString.length}`);
+                } catch (altError) {
+                    this.logger.error('Alternative cookie method also failed:', altError);
+                    return [];
+                }
+            }
+
+            // Запрашиваем события за последние 30 дней
+            const now = new Date();
+            const startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000); // 30 дней назад
+            const endDate = now;
+
+            this.logger.info(`Requesting events from ${startDate.toISOString()} to ${endDate.toISOString()}`);
+
+            let response;
+            try {
+                response = await page.evaluate(async ({ url, teamId, pageSize, cookieString, startDate, endDate, activeEventIds }) => {
+                    try {
+                        const response = await fetch(url, {
+                            method: 'POST',
+                            headers: {
+                                'Accept': '*/*',
+                                'Accept-Language': 'en-US,en;q=0.9,ru;q=0.8',
+                                'Content-Type': 'application/json',
+                                'Priority': 'u=1, i',
+                                'Referer': 'https://cursor.com/dashboard?tab=usage',
+                                'Sec-CH-UA': '"Not;A=Brand";v="99", "Google Chrome";v="139", "Chromium";v="139"',
+                                'Sec-CH-UA-Arch': '"x86"',
+                                'Sec-CH-UA-Mobile': '?0',
+                                'Sec-CH-UA-Platform': '"Windows"',
+                                'Sec-CH-UA-Platform-Version': '"19.0.0"',
+                                'Sec-Fetch-Dest': 'empty',
+                                'Sec-Fetch-Mode': 'cors',
+                                'Sec-Fetch-Site': 'same-origin',
+                                'User-Agent': navigator.userAgent,
+                                'Cookie': cookieString
+                            },
+                            credentials: 'include',
+                            body: JSON.stringify({
+                                teamId,
+                                startDate: startDate.getTime().toString(),
+                                endDate: endDate.getTime().toString(),
+                                page: 1,
+                                pageSize
+                            })
+                        });
+
+                        if (!response.ok) {
+                            throw new Error(`HTTP error! status: ${response.status}`);
+                        }
+
+                        const data = await response.json();
+                        // console.log('Server response for active events:', JSON.stringify(data, null, 2));
+                        // console.log('Active event IDs to check:', activeEventIds);
+                        // console.log('Response status:', response.status);
+                        // console.log('Response headers:', Object.fromEntries(response.headers.entries()));
+                        return data;
+                    } catch (error) {
+                        console.error('Failed to fetch active events:', error);
+                        return { events: [] };
+                    }
+                }, {
+                    url: CONFIG.CURSOR_EVENTS_API,
+                    teamId: 0,
+                    pageSize: 500,
+                    cookieString,
+                    startDate,
+                    endDate,
+                    activeEventIds
+                });
+                this.logger.info('Successfully made API request');
+            } catch (error) {
+                this.logger.error('Failed to make API request:', error);
+                return [];
+            }
+
+            if (!response) {
+                this.logger.warn('No response from server for active events check');
+                return [];
+            }
+
+            this.logger.info(`Server response keys: ${Object.keys(response).join(', ')}`);
+            this.logger.info(`Full server response: ${JSON.stringify(response, null, 2)}`);
+
+            // Проверяем, есть ли события в ответе (могут быть в разных полях)
+            let events = response.events || response.usageEventsDisplay || [];
+
+            if (!events || events.length === 0) {
+                this.logger.warn('No events in response for active events check');
+                return [];
+            }
+
+            this.logger.info(`Received ${events.length} events from server`);
+
+            // Фильтруем только те события, которые есть в активных
+            let relevantEvents;
+            try {
+                // Создаем ID для событий с сервера в том же формате, что и в локальной базе
+                const serverEventIds = events.map(event => event.timestamp + '_' + Math.random().toString(36).substr(2, 9));
+
+                relevantEvents = events.filter((event, index) => {
+                    const serverEventId = serverEventIds[index];
+                    return activeEventIds.some(activeId => activeId.startsWith(event.timestamp));
+                });
+
+                this.logger.info(`Found ${relevantEvents.length} relevant events for update check`);
+            } catch (error) {
+                this.logger.error('Failed to filter relevant events:', error);
+                return [];
+            }
+
+            // Парсим события
+            let parsedEvents;
+            try {
+                parsedEvents = relevantEvents.map(event => this.parseUsageEvent(event));
+                this.logger.info(`Parsed ${parsedEvents.length} events successfully`);
+            } catch (error) {
+                this.logger.error('Failed to parse events:', error);
+                return [];
+            }
+
+            return parsedEvents;
+
+        } catch (error) {
+            this.logger.error('Failed to collect active events for updates:', error);
+            this.logger.error('Error details:', error.message);
+            this.logger.error('Stack trace:', error.stack);
+            return [];
+        }
     }
 
     async collectFromDOM() {
@@ -415,6 +638,14 @@ export class DataCollector {
 
             // Keep other models as they are (claude-4-sonnet, etc.)
 
+            // Извлекаем maxMode из разных источников
+            let maxMode = false;
+            if (event.maxMode !== undefined) {
+                maxMode = event.maxMode;
+            } else if (event.details && event.details.toolCallComposer && event.details.toolCallComposer.maxMode !== undefined) {
+                maxMode = event.details.toolCallComposer.maxMode;
+            }
+
             const parsedEvent = {
                 id: event.timestamp + '_' + Math.random().toString(36).substr(2, 9),
                 date: timestamp,
@@ -425,7 +656,8 @@ export class DataCollector {
                 tokenUsage: tokenUsage,
                 cost: costInfo.displayCost,
                 costInfo: costInfo,
-                credits: costInfo.requestsCosts,
+                credits: event.requestsCosts || costInfo.requestsCosts,
+                maxMode: maxMode,
                 source: 'API',
                 rawData: event
             };
@@ -512,7 +744,7 @@ export class DataCollector {
                 }
             });
 
-            this.logger.info('Collected user info:', userInfo);
+            // this.logger.info('Collected user info:', userInfo);
 
             // Сохраняем данные пользователя
             if (Object.keys(userInfo).length > 0) {

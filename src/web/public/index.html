@@ -72,6 +72,14 @@
                     <h3>Total Credits</h3>
                     <div class="value" id="totalCredits">-</div>
                 </div>
+                <div class="stat-card">
+                    <h3>Estimated Cost</h3>
+                    <div class="value" id="estimatedCost">-</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Max Mode Events</h3>
+                    <div class="value" id="totalMaxMode">-</div>
+                </div>
             </div>
 
             <div class="chart-container">
@@ -219,6 +227,8 @@
             document.getElementById('chargedCost').textContent = `$${chargedCost.toFixed(2)}`;
             document.getElementById('includedCost').textContent = `$${includedCost.toFixed(2)}`;
             document.getElementById('totalCredits').textContent = `$${(totalCredits / 100).toFixed(2)}`;
+            document.getElementById('estimatedCost').textContent = `$${(statsData.estimatedCost || 0).toFixed(2)}`;
+            document.getElementById('totalMaxMode').textContent = (statsData.totalMaxMode || 0).toLocaleString();
             document.getElementById('lastUpdate').textContent = new Date(statsData.timestamp).toLocaleString();
 
             // Update token statistics
@@ -297,8 +307,8 @@
                     html += `
                         <div class="chart-item">
                             <div class="chart-header">
-                                <span class="chart-label">${model}</span>
-                                <span class="chart-summary">Credits: $${((data.credits || 0) / 100).toFixed(2)} | ${formatNumber(data.tokens)} total | $${data.cost.toFixed(2)}</span>
+                            <span class="chart-label">${model}</span>
+                                <span class="chart-summary">Credits: $${((data.credits || 0) / 100).toFixed(2)} | ${formatNumber(data.tokens)} total | $${data.cost.toFixed(2)} | Max Mode: ${data.maxMode || 0}</span>
                                 <span class="chart-count">${data.count} events (${percentage}%)</span>
                             </div>
                             <div class="chart-details">
@@ -365,7 +375,7 @@
                         <div class="chart-item">
                             <div class="chart-header">
                                 <span class="chart-label">${displayName}</span>
-                                <span class="chart-summary">Credits: $${((data.credits || 0) / 100).toFixed(2)} | ${formatNumber(data.tokens)} total | $${data.cost.toFixed(2)}</span>
+                                <span class="chart-summary">Credits: $${((data.credits || 0) / 100).toFixed(2)} | ${formatNumber(data.tokens)} total | $${data.cost.toFixed(2)} | Max Mode: ${data.maxMode || 0}</span>
                                 <span class="chart-count">${data.count} events (${percentage}%)</span>
                             </div>
                             <div class="chart-details">
@@ -455,6 +465,7 @@
                             <div class="event-info">
                                 <span class="event-date">${date}</span>
                                 <span class="event-model">${event.model === 'default' ? 'auto' : event.model}</span>
+                                <span class="event-max-mode ${event.maxMode ? '' : 'disabled'}" title="maxMode: ${event.maxMode}">Max</span>
                                 <span class="event-kind">${event.kindDisplay || event.kind}</span>
                                 <span class="event-cost ${costClass}">${costText}</span>
                             </div>
